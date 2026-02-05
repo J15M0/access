@@ -805,7 +805,11 @@ html.${PREFIX}-desat .${PREFIX}-trigger {
     }
 
     // combined filter: contrast + saturation share CSS filter, handle conflict
-    if (id === 'contrast' || id === 'saturation') resolveFilters()
+    if (id === 'contrast' || id === 'saturation') {
+      resolveFilters()
+      // re-detect trigger color since filters change visual background
+      scheduleAutoColor()
+    }
   }
 
   function resolveFilters () {
@@ -1049,7 +1053,14 @@ html.${PREFIX}-desat .${PREFIX}-trigger {
     }
 
     // relative luminance (0 = black, 1 = white)
-    const lum = (0.299 * bg[0] + 0.587 * bg[1] + 0.114 * bg[2]) / 255
+    let lum = (0.299 * bg[0] + 0.587 * bg[1] + 0.114 * bg[2]) / 255
+
+    // invert/dark contrast visually flips the page, so flip our luminance
+    // the button has a counter-filter, so it sees the VISUAL background
+    if (state.contrast === 1 || state.contrast === 2) lum = 1 - lum
+    // desaturate makes everything gray — keep default logic
+    // light contrast brightens — bump luminance slightly
+    if (state.contrast === 3) lum = Math.min(1, lum * 1.3)
 
     // pick button colors that contrast with the page background
     let btnBg, btnFg

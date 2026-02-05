@@ -178,7 +178,7 @@
   align-items: center;
   justify-content: center;
   padding: 0;
-  opacity: .3;
+  opacity: .5;
   transition: transform .2s, background .2s, opacity .2s;
 }
 .${PREFIX}-trigger:hover { transform: scale(1.15); opacity: 1; filter: brightness(1.2); }

@@ -33,6 +33,7 @@
     lineHeight: 0,     // 0-3
     textAlign: 0,      // 0=off,1=left,2=right,3=center,4=justify
     saturation: 0,     // 0=off,1=low,2=high,3=desat
+    readAloud: 0,      // 0=off,1=playing,2=paused
     oversized: 0,
     position: 'right', // 'left' | 'right'
     hidden: 0,
@@ -67,6 +68,7 @@
     lineHeight: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h-2v12h2V6zm4 0h-2v12h2V6zM8 10.05l1.79-1.79L11.2 9.67 8 12.87 4.8 9.67l1.41-1.41L8 10.05zM8 13.95l-1.79 1.79L4.8 14.33 8 11.13l3.2 3.2-1.41 1.41L8 13.95z"/></svg>`,
     textAlign: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 3h18v2H3V3zm0 4h12v2H3V7zm0 4h18v2H3v-2zm0 4h12v2H3v-2zm0 4h18v2H3v-2z"/></svg>`,
     saturation: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.69l5.66 5.66c3.12 3.12 3.12 8.19 0 11.31-1.56 1.56-3.61 2.34-5.66 2.34s-4.1-.78-5.66-2.34c-3.12-3.12-3.12-8.19 0-11.31L12 2.69zM12 4.81L7.76 9.07c-2.34 2.34-2.34 6.13 0 8.47A5.98 5.98 0 0012 19.5V4.81z"/></svg>`,
+    speaker: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>`,
     reset: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>`,
     close: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>`,
     move: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M10 9h4V6h3l-5-5-5 5h3v3zm-1 1H6V7l-5 5 5 5v-3h3v-4zm14 2l-5-5v3h-3v4h3v3l5-5zm-9 3h-4v3H7l5 5 5-5h-3v-3z"/></svg>`,
@@ -145,6 +147,12 @@
       labels: ['Saturation', 'Low Saturation', 'High Saturation', 'Desaturate'],
       max: 3,
       desc: 'Adjust color saturation',
+    },
+    {
+      id: 'readAloud', icon: icons.speaker,
+      labels: ['Read Aloud', 'Reading...', 'Paused'],
+      max: 2,
+      desc: 'Read page text aloud using text-to-speech',
     },
   ]
 
@@ -759,6 +767,7 @@ html.${PREFIX}-desat .${PREFIX}-trigger {
     dyslexia: ['', `${PREFIX}-dyslexia-font`, `${PREFIX}-legible-font`],
     cursor: ['', `${PREFIX}-big-cursor`],  // mask & guide handled separately
     tooltips: ['', ''],  // handled via JS, no CSS class
+    readAloud: ['', ''],  // handled via JS, no CSS class
     lineHeight: ['', `${PREFIX}-lh-1`, `${PREFIX}-lh-2`, `${PREFIX}-lh-3`],
     textAlign: ['', `${PREFIX}-align-left`, `${PREFIX}-align-right`, `${PREFIX}-align-center`, `${PREFIX}-align-justify`],
     saturation: ['', `${PREFIX}-sat-low`, `${PREFIX}-sat-high`, `${PREFIX}-desat`],
@@ -776,6 +785,13 @@ html.${PREFIX}-desat .${PREFIX}-trigger {
     // special: tooltips via JS
     if (id === 'tooltips') {
       state.tooltips ? enableTooltips() : disableTooltips()
+    }
+
+    // special: read aloud via Web Speech API
+    if (id === 'readAloud') {
+      if (state.readAloud === 1) startReading()
+      else if (state.readAloud === 2) pauseReading()
+      else stopReading()
     }
 
     // special: cursor modes 2 & 3
@@ -863,6 +879,7 @@ html.${PREFIX}-desat .${PREFIX}-trigger {
     removeMask()
     removeGuide()
     disableTooltips()
+    stopReading()
 
     Object.keys(defaults).forEach(k => { state[k] = defaults[k] })
     features.forEach(f => updateButton(f))
@@ -946,6 +963,52 @@ html.${PREFIX}-desat .${PREFIX}-trigger {
     tooltipFloat.style.left = (e.clientX + 12) + 'px'
     const topPos = e.clientY - 32
     tooltipFloat.style.top = (topPos < 0 ? e.clientY + 16 : topPos) + 'px'
+  }
+
+  /* ───────── text-to-speech (Read Aloud) ───────── */
+  let ttsUtterance = null
+
+  function getReadableText () {
+    // use selected text if any, otherwise grab main content
+    const sel = window.getSelection().toString().trim()
+    if (sel) return sel
+    // prefer <main>, <article>, or fall back to <body>
+    const container = document.querySelector('main') || document.querySelector('article') || document.body
+    // collect visible text, skip the widget panel
+    const clone = container.cloneNode(true)
+    clone.querySelectorAll(`.${PREFIX}-panel, .${PREFIX}-trigger, .${PREFIX}-backdrop, .${PREFIX}-unhide-tab, .${PREFIX}-tooltip-float, script, style, noscript`).forEach(n => n.remove())
+    return clone.textContent.replace(/\s+/g, ' ').trim()
+  }
+
+  function startReading () {
+    const synth = window.speechSynthesis
+    if (!synth) return
+    // if paused, resume
+    if (synth.paused) { synth.resume(); return }
+    // cancel any existing speech first
+    synth.cancel()
+    const text = getReadableText()
+    if (!text) return
+    ttsUtterance = new SpeechSynthesisUtterance(text)
+    ttsUtterance.rate = 1
+    ttsUtterance.onend = function () {
+      state.readAloud = 0
+      const f = features.find(f => f.id === 'readAloud')
+      if (f) updateButton(f)
+      saveState()
+    }
+    synth.speak(ttsUtterance)
+  }
+
+  function pauseReading () {
+    const synth = window.speechSynthesis
+    if (synth && synth.speaking) synth.pause()
+  }
+
+  function stopReading () {
+    const synth = window.speechSynthesis
+    if (synth) synth.cancel()
+    ttsUtterance = null
   }
 
   /* ───────── keyboard shortcut ───────── */

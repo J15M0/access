@@ -983,9 +983,7 @@ html.${PREFIX}-desat .${PREFIX}-trigger {
   function startReading () {
     const synth = window.speechSynthesis
     if (!synth) return
-    // if paused, resume
-    if (synth.paused) { synth.resume(); return }
-    // cancel any existing speech first
+    // always cancel first to clear any stale paused/stopped state
     synth.cancel()
     const text = getReadableText()
     if (!text) return
